@@ -136,6 +136,31 @@ html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparen
   #calText { min-height: 0; }
 }""")
 
+# 8b. The "every C" step had no way past a C the mic can't hear (phone mics barely pick up the lowest
+#     notes). After SKIP_AFTER seconds on one C, offer "Skip this C": the run moves to the next C and the
+#     skipped one is estimated from its neighbours like any key the run missed.
+patch('c-skip-visible',
+"""  ui.walkSkip.hidden = !(cal.mode !== 'run' && walkTarget() !== undefined && t - cal.keyT0 > CFG.SKIP_AFTER && cal.sub === 'listen');
+  ui.walkSkip.textContent = cal.mode === 'check' ? 'Skip the check' : 'Skip this key';""",
+"""  if (cal.mode === 'run' && cal.run === 'c') {
+    if (cal.cSkipPrev !== cal.runPrev) { cal.cSkipPrev = cal.runPrev; cal.cSkipT0 = t; }
+    const exp = runExpect();
+    ui.walkSkip.hidden = !(t - Math.max(cal.cSkipT0, cal.keyT0) > CFG.SKIP_AFTER && !cal.runProf[exp] && exp !== cal.runKeys.at(-1));
+    ui.walkSkip.textContent = `Skip ${noteName(exp)}`;
+  } else {
+  ui.walkSkip.hidden = !(cal.mode !== 'run' && walkTarget() !== undefined && t - cal.keyT0 > CFG.SKIP_AFTER && cal.sub === 'listen');
+  ui.walkSkip.textContent = cal.mode === 'check' ? 'Skip the check' : 'Skip this key';
+  }""")
+patch('c-skip-click',
+"""function skipKey() {
+  const m = walkTarget(); if (m === undefined) return;""",
+"""function skipKey() {
+  if (cal.mode === 'run' && cal.run === 'c') {
+    const exp = runExpect(); cal.runPrev = exp; dlog('run-skip', { key: noteName(exp) });
+    return runText(`Skipped ${noteName(exp)}: it will be estimated from the keys around it. Now play ${noteName(runExpect())}.`);
+  }
+  const m = walkTarget(); if (m === undefined) return;""")
+
 # 9. iPhone runtime glue + claude.ai storage, appended before </script>.
 GLUE = r"""
 /* =====================================================================================

@@ -1971,6 +1971,10 @@ function undoKey() {
   walkText(`Back to ${noteName(m)}. Play it again, softly then firmly.`);
 }
 function skipKey() {
+  if (cal.mode === 'run' && cal.run === 'c') {
+    const exp = runExpect(); cal.runPrev = exp; dlog('run-skip', { key: noteName(exp) });
+    return runText(`Skipped ${noteName(exp)}: it will be estimated from the keys around it. Now play ${noteName(runExpect())}.`);
+  }
   const m = walkTarget(); if (m === undefined) return;
   if (cal.mode === 'check') { cal.checked = true; cal.checkNote = 'Check skipped.'; song = pickSong(); return startMap(); }
   calibSkipped.add(m); calibTrouble[m] = 'skipped'; dlog('skip', { key: noteName(m) }); saveCalib();
@@ -2579,8 +2583,15 @@ function compareProfile(saved, now) {
 function calibrationTick(t) {
   if (phase === 'noise' && t - cal.t0 >= CFG.NOISE_SECONDS) { noise.finish(); noise2.finish(); if (noise.rungBins) dlog('room', { ringingBinsIgnored: noise.rungBins }); afterNoise(); return; }
   if (phase !== 'walk') return;
+  if (cal.mode === 'run' && cal.run === 'c') {
+    if (cal.cSkipPrev !== cal.runPrev) { cal.cSkipPrev = cal.runPrev; cal.cSkipT0 = t; }
+    const exp = runExpect();
+    ui.walkSkip.hidden = !(t - Math.max(cal.cSkipT0, cal.keyT0) > CFG.SKIP_AFTER && !cal.runProf[exp] && exp !== cal.runKeys.at(-1));
+    ui.walkSkip.textContent = `Skip ${noteName(exp)}`;
+  } else {
   ui.walkSkip.hidden = !(cal.mode !== 'run' && walkTarget() !== undefined && t - cal.keyT0 > CFG.SKIP_AFTER && cal.sub === 'listen');
   ui.walkSkip.textContent = cal.mode === 'check' ? 'Skip the check' : 'Skip this key';
+  }
   if (cal.sub === 'result' && t > cal.until) { cal.sub = 'listen'; cal.stableN = 0; }
   if (cal.finishAt && t > cal.finishAt) { cal.finishAt = 0; finishWalk(); }
 }
