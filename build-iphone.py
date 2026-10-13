@@ -78,7 +78,13 @@ patch('end-send',
 patch('build-stamp',
 """    <p id="introErr" class="err" hidden></p>""",
 """    <p id="introErr" class="err" hidden></p>
-    <p id="buildStamp" class="note">iPhone build 5 · recordings save on this phone</p>""")
+    <p id="buildStamp" class="note">iPhone build 6 · recordings save on this phone</p>""")
+# 4b. Phone mics hear a note's fundamental weakly, so its octave overtone can win (Ryan's first phone
+#     game: C4 heard as C5 twice, with an "OCTAVE" penalty). With OCTAVE_ANY an octave of the due key
+#     counts as the due key for single notes too, not only for chords and low bass.
+patch('octave-any',
+"""&& (nx.lanes.length > 1 || LANES[l].midi < 48)) : undefined;""",
+"""&& (nx.lanes.length > 1 || LANES[l].midi < 48 || CFG.OCTAVE_ANY)) : undefined;""")
 patch('mark-button',
 """    <button id="quit" class="ghost" type="button">Menu</button>""",
 """    <button id="markBtn" class="ghost" type="button" title="Tap the moment the game misses a note you played">Missed one</button>
@@ -229,6 +235,7 @@ GLUE = r"""
   }, 200);
   // Songs: while the game waits on a note, three strikes within 6 s whose closest key is that note
   // (even below the normal match) count as playing it. Off with CFG.REPEAT_CREDIT = 0.
+  CFG.OCTAVE_ANY = true;
   CFG.REPEAT_CREDIT = 3; CFG.REPEAT_MIN = 0.4; CFG.REPEAT_WIN = 6;
   let rep = null;
   const upd = Matcher.prototype.update;

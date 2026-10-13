@@ -241,7 +241,7 @@ html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparen
       <button id="btnSim" class="ghost" type="button">Try the virtual piano</button>
     </div>
     <p id="introErr" class="err" hidden></p>
-    <p id="buildStamp" class="note">iPhone build 5 · recordings save on this phone</p>
+    <p id="buildStamp" class="note">iPhone build 6 · recordings save on this phone</p>
     <p id="ownPage" class="note" hidden>Microphone not starting here? <a id="ownPageLink" href="#" target="_blank" rel="noopener">Open on its own page</a> to run the game by itself in Safari, where it can ask for the microphone.</p>
     <p class="note" id="savedInfo"></p>
     <div class="row"><label class="ghost filebtn" for="calFile">Load a setup file…</label><input id="calFile" type="file" accept=".json,application/json" hidden></div>
@@ -2973,7 +2973,7 @@ function analyse(t) {
       // An octave of a due key, while a chord is due or the due key is low bass (below C3, where the
       // fundamental is weak and the octave above carries the sound): that's the due key. B2 in a
       // left-hand chord reads as B3; with the right hand's G4 over it, as G2.
-      const due = CFG.OCTAVE_CREDIT && nx && game.notes.includes(nx) ? nx.lanes.find(l => !nx.got?.[l] && [12, 24].includes(Math.abs(LANES[l].midi - profiles[f.i].midi)) && (nx.lanes.length > 1 || LANES[l].midi < 48)) : undefined;
+      const due = CFG.OCTAVE_CREDIT && nx && game.notes.includes(nx) ? nx.lanes.find(l => !nx.got?.[l] && [12, 24].includes(Math.abs(LANES[l].midi - profiles[f.i].midi)) && (nx.lanes.length > 1 || LANES[l].midi < 48 || CFG.OCTAVE_ANY)) : undefined;
       if (due !== undefined && !nx.lanes.includes(f.i)) { dlog('octave-credit', { key: profiles[f.i].name, as: LANES[due].name }); window.PIRec?.ev?.('octave-credit', { lane: f.i, as: due }); gameHit(due, f.t, f.score); continue; }
       if (f.i >= LANES.length) { wrongOctave(f.i, f.top, f.score); continue; }   // a key this song doesn't use
       dlog('hit', { key: LANES[f.i].name, top: f.top }); gameHit(f.i, f.t, f.score);
@@ -3739,6 +3739,7 @@ const __piGlobals = { CFG: () => CFG, LANES: () => LANES, Matcher: () => Matcher
   }, 200);
   // Songs: while the game waits on a note, three strikes within 6 s whose closest key is that note
   // (even below the normal match) count as playing it. Off with CFG.REPEAT_CREDIT = 0.
+  CFG.OCTAVE_ANY = true;
   CFG.REPEAT_CREDIT = 3; CFG.REPEAT_MIN = 0.4; CFG.REPEAT_WIN = 6;
   let rep = null;
   const upd = Matcher.prototype.update;
