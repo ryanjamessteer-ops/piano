@@ -241,6 +241,7 @@ html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparen
       <button id="btnSim" class="ghost" type="button">Try the virtual piano</button>
     </div>
     <p id="introErr" class="err" hidden></p>
+    <p id="buildStamp" class="note">iPhone build 5 · recordings save on this phone</p>
     <p id="ownPage" class="note" hidden>Microphone not starting here? <a id="ownPageLink" href="#" target="_blank" rel="noopener">Open on its own page</a> to run the game by itself in Safari, where it can ask for the microphone.</p>
     <p class="note" id="savedInfo"></p>
     <div class="row"><label class="ghost filebtn" for="calFile">Load a setup file…</label><input id="calFile" type="file" accept=".json,application/json" hidden></div>
@@ -311,6 +312,7 @@ html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparen
       <button id="btnPractise" class="ghost" type="button" hidden>Practise those bars</button>
       <button id="btnNext" class="ghost" type="button" hidden>Next lesson</button>
       <button id="btnEndRecal" class="ghost" type="button">Lessons</button>
+      <button id="btnEndSend" class="ghost" type="button" hidden>Send recordings</button>
     </div>
   </section>
 
@@ -3829,11 +3831,13 @@ const __piGlobals = { CFG: () => CFG, LANES: () => LANES, Matcher: () => Matcher
     await tx('readwrite', st => st.put({ base, wav, json: text, at: Date.now(), sent: false }));
     showSend();
   }; showSend(); });
-  const send = $('#btnRecSend');
+  const send = $('#btnRecSend'), endSend = $('#btnEndSend');
+  endSend.onclick = () => send.onclick();
   async function showSend() {
     try {
       const recs = await allRecs(), n = recs.filter(r => !r.sent).length;
       send.hidden = !n; send.textContent = `Send ${n} recording${n === 1 ? '' : 's'}`;
+      endSend.hidden = !n; endSend.textContent = `Send ${n} recording${n === 1 ? '' : 's'} to Claude`;
       const c = $('#recCount'); c.hidden = false;
       c.textContent = n ? `${n} recording${n === 1 ? '' : 's'} saved on this phone, not sent yet.` : recs.length ? 'All recordings sent.' : 'No recordings yet.';
     } catch (e) { /* storage blocked */ }

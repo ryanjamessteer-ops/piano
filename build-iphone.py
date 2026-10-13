@@ -71,6 +71,14 @@ patch('own-page-link',
     <p id="ownPage" class="note" hidden>Microphone not starting here? <a id="ownPageLink" href="#" target="_blank" rel="noopener">Open on its own page</a> to run the game by itself in Safari, where it can ask for the microphone.</p>""")
 
 # 4. "Missed one" button: the touch version of pressing M during a song.
+patch('end-send',
+"""      <button id="btnEndRecal" class="ghost" type="button">Lessons</button>""",
+"""      <button id="btnEndRecal" class="ghost" type="button">Lessons</button>
+      <button id="btnEndSend" class="ghost" type="button" hidden>Send recordings</button>""")
+patch('build-stamp',
+"""    <p id="introErr" class="err" hidden></p>""",
+"""    <p id="introErr" class="err" hidden></p>
+    <p id="buildStamp" class="note">iPhone build 5 · recordings save on this phone</p>""")
 patch('mark-button',
 """    <button id="quit" class="ghost" type="button">Menu</button>""",
 """    <button id="markBtn" class="ghost" type="button" title="Tap the moment the game misses a note you played">Missed one</button>
@@ -313,11 +321,13 @@ GLUE = r"""
     await tx('readwrite', st => st.put({ base, wav, json: text, at: Date.now(), sent: false }));
     showSend();
   }; showSend(); });
-  const send = $('#btnRecSend');
+  const send = $('#btnRecSend'), endSend = $('#btnEndSend');
+  endSend.onclick = () => send.onclick();
   async function showSend() {
     try {
       const recs = await allRecs(), n = recs.filter(r => !r.sent).length;
       send.hidden = !n; send.textContent = `Send ${n} recording${n === 1 ? '' : 's'}`;
+      endSend.hidden = !n; endSend.textContent = `Send ${n} recording${n === 1 ? '' : 's'} to Claude`;
       const c = $('#recCount'); c.hidden = false;
       c.textContent = n ? `${n} recording${n === 1 ? '' : 's'} saved on this phone, not sent yet.` : recs.length ? 'All recordings sent.' : 'No recordings yet.';
     } catch (e) { /* storage blocked */ }
