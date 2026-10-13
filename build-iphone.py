@@ -204,6 +204,41 @@ GLUE = r"""
     }
   });
 
+  // Repeated tries count (Ryan's idea, for mics that hear the piano faintly).
+  // Setup, every-C step: three strikes on the C that's due without a usable pitch skip it; it is
+  // estimated from its neighbours like any key the run missed.
+  setInterval(() => {
+    if (phase !== 'walk' || cal.mode !== 'run' || cal.run !== 'c') return;
+    const exp = runExpect(), auto = cal.autoSkipped || (cal.autoSkipped = {});
+    if ((cal.fails?.[exp] || 0) >= 3 && !cal.runProf[exp] && !auto[exp] && exp !== cal.runKeys.at(-1)) {
+      auto[exp] = true; cal.runPrev = exp; dlog('run-autoskip', { key: noteName(exp), tries: cal.fails[exp] });
+      runText(`Heard you try ${noteName(exp)} ${cal.fails[exp]} times without a clear note, so it's taken as played and estimated from the keys around it. Now play ${noteName(runExpect())}.`);
+    }
+  }, 200);
+  // Songs: while the game waits on a note, three strikes within 6 s whose closest key is that note
+  // (even below the normal match) count as playing it. Off with CFG.REPEAT_CREDIT = 0.
+  CFG.REPEAT_CREDIT = 3; CFG.REPEAT_MIN = 0.4; CFG.REPEAT_WIN = 6;
+  let rep = null;
+  const upd = Matcher.prototype.update;
+  Matcher.prototype.update = function () {
+    const r = upd.apply(this, arguments);
+    try {
+      const ms = r?.missed;
+      if (CFG.REPEAT_CREDIT && ms && phase === 'game' && game.frozen && game.notes) {
+        const n = game.notes.find(x => x.state === 'pending');
+        if (n && n.lanes.includes(ms.i) && !(n.got && ms.i in n.got) && ms.best >= CFG.REPEAT_MIN) {
+          rep = rep && rep.n === n && rep.lane === ms.i && ms.t - rep.t0 < CFG.REPEAT_WIN ? { ...rep, k: rep.k + 1 } : { n, lane: ms.i, k: 1, t0: ms.t };
+          dlog('repeat-try', { key: LANES[ms.i]?.name, tries: rep.k, best: +ms.best.toFixed(2) });
+          if (rep.k >= CFG.REPEAT_CREDIT) {
+            dlog('repeat-credit', { key: LANES[ms.i]?.name }); window.PIRec?.ev?.('repeat-credit', { lane: ms.i, tries: rep.k, best: +ms.best.toFixed(3) });
+            rep = null; window.gameHit(ms.i, ms.t, ms.best);
+          }
+        }
+      }
+    } catch (e) { console.warn('repeat credit', e); }
+    return r;
+  };
+
   // "Missed one": same mark as pressing M on a computer.
   const mark = $('#markBtn'), R = window.PIRec;
   mark.onclick = () => {
