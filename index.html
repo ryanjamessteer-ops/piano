@@ -282,6 +282,7 @@ html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparen
       <p id="recMsg" class="note">Every game is saved as a sound file plus a log of what the game heard and decided, so a missed note can be found and fixed. On this page they're stored with the page itself, where Claude can fetch and check them. Tap <b>Missed one</b> during a song the moment it misses a note you played.</p>
       <p id="recCount" class="note" hidden></p>
       <button id="btnRecShare" class="ghost" type="button" hidden>Save last recording</button>
+      <button id="btnRecSend" class="ghost" type="button" hidden>Send recordings</button>
     </div>
     <details id="kbDetails">
       <summary>Your keyboard</summary>
@@ -3632,6 +3633,9 @@ const __piGlobals = { CFG: () => CFG, LANES: () => LANES, Matcher: () => Matcher
       if (await R.cloudSave?.(base, blob, text, rec)) { R.onSaved?.(base, 'cloud', chunks.length > 0); return; }
     } catch (e) { console.warn('PIRec cloud save failed', e); R.cloudErr = e?.code || e?.message || String(e); }
     const files = [new File([blob], base + '.wav', { type: 'audio/wav' }), new File([text], base + '.json', { type: 'application/json' })];
+    if (R.localSave) {
+      try { await R.localSave(base, blob, text); R.onSaved?.(base, 'local', chunks.length > 0); return; } catch (e) { console.warn('PIRec local save failed', e); }
+    }
     if (navigator.canShare?.({ files })) { R.pending = { base, files }; R.onSaved?.(base, 'share', chunks.length > 0); return; }
     for (const [name, data] of [[base + '.wav', blob], [base + '.json', new Blob([text], { type: 'application/json' })]]) {
       const a = document.createElement('a'); a.href = URL.createObjectURL(data); a.download = name; document.body.appendChild(a); a.click(); a.remove();
@@ -3787,7 +3791,7 @@ const __piGlobals = { CFG: () => CFG, LANES: () => LANES, Matcher: () => Matcher
     } catch (e) { /* not signed in: stays hidden */ }
   }
   showCount();
-  cloud.then(c => { if (!c) $('#recMsg').innerHTML = 'Every game is saved as a sound file plus a log of what the game heard and decided, so a missed note can be found and fixed. After a game, tap <b>Save last recording</b> here to send it to Files, AirDrop or a chat. Tap <b>Missed one</b> during a song the moment it misses a note you played.'; });
+  cloud.then(c => { if (!c) $('#recMsg').innerHTML = 'Every game is saved as a sound file plus a log of what the game heard and decided, so a missed note can be found and fixed. Each one is kept on this phone automatically. Tap <b>Send recordings</b> to send all new ones at once, as one .zip, to Files, AirDrop or a chat with Claude. Tap <b>Missed one</b> during a song the moment it misses a note you played.'; });
   R.cloudSave = async (base, wavBlob, text, rec) => {
     const c = await cloud; if (!c) return false;
     toast(`Uploading recording ${base}…`, 0);
@@ -3811,7 +3815,63 @@ const __piGlobals = { CFG: () => CFG, LANES: () => LANES, Matcher: () => Matcher
     return true;
   };
 
-  // Share sheet (Safari outside claude.ai): sharing needs a tap, so the recording waits for one.
+  /* ---------- recordings kept on the phone (Safari outside claude.ai) ---------- */
+  // Every game is stored in this browser's IndexedDB as it ends. "Send recordings" zips all the unsent
+  // ones into one file for the share sheet (sharing needs a tap, so it can't happen by itself). Sent
+  // recordings are kept until there are more than KEEP_SENT of them.
+  const KEEP_SENT = 10;
+  const recDb = () => new Promise((res, rej) => { const q = indexedDB.open('pi-recs', 1); q.onupgradeneeded = () => q.result.createObjectStore('recs', { keyPath: 'base' }); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+  const tx = async (mode, fn) => { const db = await recDb(); return new Promise((res, rej) => { const t = db.transaction('recs', mode), st = t.objectStore('recs'); const out = fn(st); t.oncomplete = () => res(out?.result ?? out); t.onerror = () => rej(t.error); }); };
+  const allRecs = () => tx('readonly', st => st.getAll());
+  cloud.then(c => { if (c) return; R.localSave = async (base, wavBlob, text) => {
+    // Safari can't store a Blob in IndexedDB in every version: keep the bytes as an ArrayBuffer.
+    const wav = await wavBlob.arrayBuffer();
+    await tx('readwrite', st => st.put({ base, wav, json: text, at: Date.now(), sent: false }));
+    showSend();
+  }; showSend(); });
+  const send = $('#btnRecSend');
+  async function showSend() {
+    try {
+      const recs = await allRecs(), n = recs.filter(r => !r.sent).length;
+      send.hidden = !n; send.textContent = `Send ${n} recording${n === 1 ? '' : 's'}`;
+      const c = $('#recCount'); c.hidden = false;
+      c.textContent = n ? `${n} recording${n === 1 ? '' : 's'} saved on this phone, not sent yet.` : recs.length ? 'All recordings sent.' : 'No recordings yet.';
+    } catch (e) { /* storage blocked */ }
+  }
+  // Minimal .zip writer (stored, no compression: WAV doesn't compress much and this stays fast).
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = u8 => { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  function zip(entries) {
+    const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+    for (const { name, data } of entries) {
+      const nm = enc.encode(name), crc = crc32(data), h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, nm.length, true);
+      parts.push(h, nm, data);
+      const c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, nm.length, true); c.setUint32(42, off, true);
+      central.push(c, nm); off += 30 + nm.length + data.length;
+    }
+    const cl = central.reduce((a, x) => a + x.byteLength, 0), e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, entries.length, true); e.setUint16(10, entries.length, true); e.setUint32(12, cl, true); e.setUint32(16, off, true);
+    return new Blob([...parts, ...central, e], { type: 'application/zip' });
+  }
+  send.onclick = async () => {
+    const recs = (await allRecs()).filter(r => !r.sent).sort((a, b) => a.at - b.at);
+    if (!recs.length) return showSend();
+    const enc = new TextEncoder(), entries = recs.flatMap(r => [{ name: r.base + '.wav', data: new Uint8Array(r.wav) }, { name: r.base + '.json', data: enc.encode(r.json) }]);
+    const d = new Date(), p2 = n => String(n).padStart(2, '0');
+    const file = new File([zip(entries)], `piano-instant-recordings-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.zip`, { type: 'application/zip' });
+    try {
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: file.name });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); }
+    } catch (e) { return; }   // cancelled: nothing marked as sent
+    await tx('readwrite', st => { for (const r of recs) st.put({ ...r, sent: true }); });
+    const sent = (await allRecs()).filter(r => r.sent).sort((a, b) => b.at - a.at).slice(KEEP_SENT);
+    if (sent.length) await tx('readwrite', st => { for (const r of sent) st.delete(r.base); });
+    showSend();
+  };
+
+  // Share sheet fallback when the phone can't keep recordings: sharing needs a tap, so it waits for one.
   const share = $('#btnRecShare');
   share.onclick = async () => {
     const p = R.pending; if (!p) return;
@@ -3828,6 +3888,11 @@ const __piGlobals = { CFG: () => CFG, LANES: () => LANES, Matcher: () => Matcher
     if (how === 'cloud') {
       msg.textContent = withAudio ? `Stored ${base} on this page. Ask Claude to analyse your latest recordings.` : `Stored ${base}, but without audio: the page couldn't record the microphone.`;
       toast(`Recording stored: ${base}` + (withAudio ? '' : ' (no audio)'));
+      return;
+    }
+    if (how === 'local') {
+      msg.textContent = withAudio ? `Saved ${base} on this phone. Tap "Send recordings" whenever you want to send them.` : `Saved ${base}, but without audio: the page couldn't record the microphone.`;
+      toast(`Recording saved on this phone`);
       return;
     }
     if (how === 'share') {
